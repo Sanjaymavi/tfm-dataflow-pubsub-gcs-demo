@@ -1,21 +1,45 @@
-# resource "google_storage_bucket" "data_bucket" {
-#   name          = var.bucket_name
-#   location      = var.region
-#   project       = var.project_id
-#   force_destroy = true
-#
-#   uniform_bucket_level_access = true
-#
-#   lifecycle_rule {
-#     condition {
-#       age = 30
-#     }
-#     action {
-#       type = "Delete"
-#     }
-#   }
-# }
+resource "google_storage_bucket" "data_bucket" {
+  name          = var.bucket_name
+  location      = var.region
+  project       = var.project_id
+  force_destroy = true
 
+  uniform_bucket_level_access = true
+
+  lifecycle_rule {
+    condition {
+      age = 30
+    }
+    action {
+      type = "Delete"
+    }
+  }
+}
+
+## this bucket is for publishing the message to the topic in pubsub.
+## Before pushing/copying the content to bucket we need to two things
+## 1.) create a notification for the bucket with the topic in pubsub using the command
+##    >>gcloud storage buckets notifications create gs://pubsub_pulisher_bucket --topic=my-topic
+## 2.) Once the notification created then we can push the object that will trigger the event notification of the bucket, it will publish the data to the topic mentioned in the command
+
+
+resource "google_storage_bucket" "pub_sub_event_Publisher_bucket" {
+  name          = var.bucket_name2
+  location      = var.region
+  project       = var.project_id
+  force_destroy = true
+
+  uniform_bucket_level_access = true
+
+  lifecycle_rule {
+    condition {
+      age = 30
+    }
+    action {
+      type = "Delete"
+    }
+  }
+}
 
 resource "google_pubsub_topic" "topic" {
   name = var.topic_name
