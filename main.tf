@@ -1,139 +1,119 @@
+############ Bucket Creation Code
+
 resource "google_storage_bucket" "data_bucket" {
-  name          = var.bucket_name
-  location      = var.region
-  project       = var.project_id
-  force_destroy = true
-
+  name                        = "sanjay-demo-data-bucket-001"
+  location                    = "ASIA"
   uniform_bucket_level_access = true
+  project                     = var.project_id
 
-  lifecycle_rule {
-    condition {
-      age = 30
-    }
-    action {
-      type = "Delete"
-    }
+  versioning {
+    enabled = true
   }
 }
 
-## this bucket is for publishing the message to the topic in pubsub.
-## Before pushing/copying the content to bucket we need to two things
-## 1.) create a notification for the bucket with the topic in pubsub using the command
-##    >>gcloud storage buckets notifications create gs://pubsub_pulisher_bucket --topic=my-topic
-## 2.) Once the notification created then we can push the object that will trigger the event notification of the bucket, it will publish the data to the topic mentioned in the command
+########## Artifact Registry Code
 
-
-resource "google_storage_bucket" "pub_sub_event_Publisher_bucket" {
-  name          = var.bucket_name2
+resource "google_artifact_registry_repository" "docker_repo" {
   location      = var.region
+  repository_id = "docker-repo"
+  description   = "Docker images repository"
+  format        = "DOCKER"
   project       = var.project_id
-  force_destroy = true
+}
 
-  uniform_bucket_level_access = true
+######## VPC Code
 
-  lifecycle_rule {
-    condition {
-      age = 30
+resource "google_compute_network" "vpc" {
+  name                    = "demo-vpc"
+  auto_create_subnetworks = false
+  project                 = var.project_id
+}
+
+######## subnet Code
+
+resource "google_compute_subnetwork" "subnet" {
+  name          = "demo-subnet"
+  ip_cidr_range = "10.10.0.0/24"
+  project       = var.project_id
+
+  region  = var.region
+  network = google_compute_network.vpc.id
+}
+
+
+########## Firewall code
+
+resource "google_compute_firewall" "allow_ssh" {
+  name    = "allow-ssh"
+  network = google_compute_network.vpc.name
+  project = var.project_id
+
+  allow {
+    protocol = "tcp"
+    ports    = ["22"]
+  }
+
+  source_ranges = ["0.0.0.0/0"]
+}
+
+
+
+########## Virtual machine code
+
+resource "google_compute_instance" "vm" {
+  name         = "terraform-vm"
+  machine_type = "e2-medium"
+  zone         = var.zone
+  project      = var.project_id
+
+  boot_disk {
+    initialize_params {
+      image = "ubuntu-os-cloud/ubuntu-2404-lts-amd64"
+      size  = 20
     }
-    action {
-      type = "Delete"
+  }
+
+  network_interface {
+    subnetwork = google_compute_subnetwork.subnet.id
+
+    access_config {
     }
   }
+
+  tags = ["ssh"]
 }
 
-resource "google_pubsub_topic" "topic" {
-  name = var.topic_name
-  project = var.project_id
+############ GKE Cluster
+
+resource "google_container_cluster" "gke" {
+  name     = "demo-gke-cluster"
+  location = var.region
+  project  = var.project_id
+
+  network    = google_compute_network.vpc.id
+  subnetwork = google_compute_subnetwork.subnet.id
+
+  deletion_protection = false
+
+  remove_default_node_pool = true
+  initial_node_count       = 1
 }
 
-resource "google_pubsub_topic" "dead_letter_topic" {
-  name = "orders-dead-letter-topic"
-  project = var.project_id
-}
+######## Node Pool
 
-data "google_project" "project" {
-  project_id = "project-e85d8801-bd70-4ddd-8bc"
-}
+resource "google_container_node_pool" "primary_nodes" {
+  name     = "primary-node-pool"
+  cluster  = google_container_cluster.gke.name
+  location = var.region
+  project  = var.project_id
 
-resource "google_pubsub_topic_iam_member" "dead_letter_publisher" {
-  topic = google_pubsub_topic.dead_letter_topic.name
-  role  = "roles/pubsub.publisher"
-  project = var.project_id
+  node_count = 1
 
-  member = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
-}
+  node_config {
+    machine_type = "e2-small"
 
-resource "google_pubsub_subscription" "subscription" {
-  name  = var.subscription_name
-  topic = google_pubsub_topic.topic.name
-  project = var.project_id
-
-  ack_deadline_seconds = 20
-
-  message_retention_duration = "604800s" # 7 days
-
-  retain_acked_messages = true
-
-  dead_letter_policy {
-    dead_letter_topic     = google_pubsub_topic.dead_letter_topic.id
-    max_delivery_attempts = 5
-  }
-
-  retry_policy {
-    minimum_backoff = "10s"
-    maximum_backoff = "600s"
+    oauth_scopes = [
+      "https://www.googleapis.com/auth/cloud-platform"
+    ]
   }
 }
-
-## the below sub
-resource "google_pubsub_subscription" "main_subscription" {
-  name  = "orders-subscription"
-  topic = google_pubsub_topic.topic.name
-  project = var.project_id
-
-  ack_deadline_seconds = 20
-
-  message_retention_duration = "604800s"
-
-  dead_letter_policy {
-    dead_letter_topic     = google_pubsub_topic.dead_letter_topic.id
-    max_delivery_attempts = 5
-  }
-
-  retry_policy {
-    minimum_backoff = "10s"
-    maximum_backoff = "600s"
-  }
-}
-# resource "google_dataflow_flex_template_job" "dataflow_job" {
-#   provider = google-beta   # 👈 IMPORTANT
-#   project  = var.project_id
-#
-#   name                    = "pubsub-to-gcs-job"
-#   region                  = var.region
-#   container_spec_gcs_path = "gs://dataflow-templates/latest/flex/Cloud_PubSub_to_GCS_Text"
-#
-#   parameters = {
-#     inputSubscription = google_pubsub_subscription.subscription.id
-#     outputDirectory   = "gs://${google_storage_bucket.data_bucket.name}/output"
-#   }
-#
-#   on_delete = "cancel"
-# }
-
-# resource "google_dataflow_job" "dataflow_job" {
-#   provider = google-beta   # 👈 IMPORTANT
-#   project  = var.project_id
-#   max_workers = 1
-#   region = "us-central1"
-#   name              = "pubsub-to-gcs-job"
-#   template_gcs_path = "gs://dataflow-templates/latest/Cloud_PubSub_to_GCS_Text"
-#
-#   temp_gcs_location = "gs://${google_storage_bucket.data_bucket.name}/temp"
-#
-#   parameters = {
-#     inputTopic           = google_pubsub_topic.topic.id
-#     outputFilenamePrefix = "gs://${google_storage_bucket.data_bucket.name}/output"
-#     outputDirectory      = "gs://${google_storage_bucket.data_bucket.name}/output"
-#   }
-# }
