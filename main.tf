@@ -1,15 +1,15 @@
 ############ Bucket Creation Code
 
-resource "google_storage_bucket" "data_bucket" {
-  name                        = "sanjay-demo-data-bucket-001"
-  location                    = "ASIA"
-  uniform_bucket_level_access = true
-  project                     = var.project_id
-
-  versioning {
-    enabled = true
-  }
-}
+# resource "google_storage_bucket" "data_bucket" {
+#   name                        = "sanjay-demo-data-bucket-001"
+#   location                    = "ASIA"
+#   uniform_bucket_level_access = true
+#   project                     = var.project_id
+#
+#   versioning {
+#     enabled = true
+#   }
+# }
 
 ########## Artifact Registry Code
 
@@ -60,28 +60,26 @@ resource "google_compute_firewall" "allow_ssh" {
 
 ########## Virtual machine code
 
-resource "google_compute_instance" "vm" {
-  name         = "terraform-vm"
-  machine_type = "e2-medium"
-  zone         = var.zone
-  project      = var.project_id
+# resource "google_compute_instance" "vm" {
+#   name         = "terraform-vm"
+#   machine_type = "e2-medium"
+#   zone         = var.zone
+#   project      = var.project_id
+#
+#   boot_disk {
+#     initialize_params {
+#       image = "ubuntu-os-cloud/ubuntu-2404-lts-amd64"
+#     }
+#   }
 
-  boot_disk {
-    initialize_params {
-      image = "ubuntu-os-cloud/ubuntu-2404-lts-amd64"
-      size  = 20
-    }
-  }
-
-  network_interface {
-    subnetwork = google_compute_subnetwork.subnet.id
-
-    access_config {
-    }
-  }
-
-  tags = ["ssh"]
-}
+#   network_interface {
+#     subnetwork = google_compute_subnetwork.subnet.id
+#
+#     access_config {
+#     }
+#   }
+#
+# }
 
 ############ GKE Cluster
 
